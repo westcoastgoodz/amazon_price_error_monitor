@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import defaultdict
 
 from config import DATA_DIR, Settings
 from discord_notifier import send_alert
@@ -17,14 +16,28 @@ logger = logging.getLogger(__name__)
 
 INT_MAX = 2147483647
 
+# Keepa page is sorted by high discount — one 60%+ fetch floods with 90%+ and
+# starves Amazon-60/70/80. Fetch each band separately so every channel can alert.
+TIER_BANDS: dict[int, tuple[int, int]] = {
+    90: (90, INT_MAX),
+    80: (80, 89),
+    70: (70, 79),
+    60: (60, 69),
+}
 
-def build_selection(s: Settings) -> dict:
+
+def build_selection(
+    s: Settings,
+    *,
+    delta_percent_range: tuple[int, int] | None = None,
+) -> dict:
+    lo, hi = delta_percent_range or (s.min_discount, INT_MAX)
     selection: dict = {
         "domainId": s.keepa_domain,
         "priceTypes": [s.price_type],
         "dateRange": s.date_range,
         "sortType": 4,
-        "deltaPercentRange": [s.min_discount, INT_MAX],
+        "deltaPercentRange": [lo, hi],
         "isFilterEnabled": True,
         "isRangeEnabled": True,
     }
@@ -43,6 +56,17 @@ def _deal_score(item: AlertItem) -> tuple:
     """Higher is better: discount %, then dollars saved, then lower new price."""
     saved = max(0.0, item.old_price - item.new_price)
     return (item.discount, saved, -item.new_price)
+
+
+def _tier_band(tier: int, min_discount: int) -> tuple[int, int] | None:
+    """Discount window for a Discord tier, clipped to min_discount."""
+    if tier not in TIER_BANDS:
+        return None
+    lo, hi = TIER_BANDS[tier]
+    lo = max(lo, int(min_discount))
+    if lo > hi:
+        return None
+    return lo, hi
 
 
 class Monitor:
@@ -72,23 +96,9 @@ class Monitor:
             item.old_price = round(ref, 2)
             item.discount = int(round((ref - item.new_price) / ref * 100))
 
-    def run_once(self) -> int:
-        self.reload_settings()
-        try:
-            deals = self.keepa.get_deals(self.selection)
-        except KeepaError as exc:
-            logger.error("Keepa deal fetch failed: %s", exc)
-            return 0
-
-        logger.info(
-            "Fetched %d deals (tokens left: %s) | scan every %ss",
-            len(deals),
-            self.keepa.tokens_left,
-            self.s.poll_interval_sec,
-        )
-
-        # Build candidates WITHOUT enriching every row (saves tokens).
-        by_tier: dict[int, list[AlertItem]] = defaultdict(list)
+    def _candidates_from_deals(self, deals: list, tier: int) -> list[AlertItem]:
+        """Filter deals that route to this tier under current settings."""
+        out: list[AlertItem] = []
         for deal in deals:
             if not deal.asin:
                 continue
@@ -96,11 +106,11 @@ class Monitor:
             if item is None:
                 continue
             self._apply_rolling_reference(item)
-            ok, reason = passes_filters(item, self.s)
+            ok, _reason = passes_filters(item, self.s)
             if not ok:
                 continue
             tiers = target_tiers(item.discount, self.s)
-            if not tiers:
+            if tier not in tiers:
                 continue
             if not self.store.should_alert(
                 item.asin,
@@ -110,62 +120,86 @@ class Monitor:
                 allow_if_cheaper=bool(getattr(self.s, "allow_cheaper_repeat", True)),
             ):
                 continue
-            # highest mode → one tier; cascade → list (still pick best per tier below)
-            for t in tiers:
-                by_tier[t].append(item)
+            out.append(item)
+        return out
 
+    def _enrich(self, item: AlertItem) -> None:
+        try:
+            product = self.keepa.get_product(item.asin)
+        except KeepaError as exc:
+            logger.debug("Enrich failed %s: %s", item.asin, exc)
+            return
+        if not product:
+            return
+        from keepa_client import product_image_url
+        from models import _extract_stats, _seller_label
+
+        stats = _extract_stats(product)
+        item.seller = _seller_label(stats, self.s.amazon_seller_id)
+        item.promotion = bool(stats.get("promotion"))
+        item.business_required = bool(stats.get("business_required"))
+        item.brand = stats.get("brand")
+        item.review_count = stats.get("review_count")
+        item.rating = stats.get("rating")
+        title = (product.get("title") or "").strip()
+        if title:
+            item.title = title
+        built = product_image_url(product)
+        if built:
+            item.image_url = built
+
+    def run_once(self) -> int:
+        self.reload_settings()
         max_per = int(getattr(self.s, "max_alerts_per_tier", 1) or 1)
         enrich = bool(getattr(self.s, "enrich_on_alert", True))
         alerted = 0
         sent_asins: set[str] = set()
 
-        # Process high tiers first so a 90% deal goes to Amazon-90, not also treated as filler.
-        for tier in sorted(by_tier.keys(), reverse=True):
-            pool = by_tier[tier]
-            # Unique ASINs, best score first
+        # High tiers first; each band is its own Keepa /deal call.
+        active_tiers = [t for t in (90, 80, 70, 60) if self.s.webhooks.get(t)]
+        for i, tier in enumerate(active_tiers):
+            if self._stop:
+                break
+            band = _tier_band(tier, self.s.min_discount)
+            if band is None:
+                continue
+            selection = build_selection(self.s, delta_percent_range=band)
+            try:
+                deals = self.keepa.get_deals(selection)
+            except KeepaError as exc:
+                logger.error("Keepa deal fetch failed for Amazon-%s: %s", tier, exc)
+                continue
+
+            logger.info(
+                "Amazon-%s band %s–%s: %d deals (tokens left: %s)",
+                tier,
+                band[0],
+                "max" if band[1] >= INT_MAX else band[1],
+                len(deals),
+                self.keepa.tokens_left,
+            )
+
+            candidates = self._candidates_from_deals(deals, tier)
             best_by_asin: dict[str, AlertItem] = {}
-            for it in pool:
+            for it in candidates:
                 prev = best_by_asin.get(it.asin)
                 if prev is None or _deal_score(it) > _deal_score(prev):
                     best_by_asin[it.asin] = it
             ranked = sorted(best_by_asin.values(), key=_deal_score, reverse=True)
 
             picked = 0
+            webhook = self.s.webhooks.get(tier)
+            if not webhook:
+                continue
+
             for item in ranked:
                 if picked >= max_per:
                     break
                 if item.asin in sent_asins:
                     continue
-
-                # Enrich only this winner (seller / business / better image).
                 if enrich:
-                    try:
-                        product = self.keepa.get_product(item.asin)
-                    except KeepaError as exc:
-                        logger.debug("Enrich failed %s: %s", item.asin, exc)
-                        product = None
-                    if product:
-                        from models import _extract_stats, _seller_label
+                    self._enrich(item)
 
-                        stats = _extract_stats(product)
-                        item.seller = _seller_label(stats, self.s.amazon_seller_id)
-                        item.promotion = bool(stats.get("promotion"))
-                        item.business_required = bool(stats.get("business_required"))
-                        item.brand = stats.get("brand")
-                        item.review_count = stats.get("review_count")
-                        item.rating = stats.get("rating")
-                        title = (product.get("title") or "").strip()
-                        if title:
-                            item.title = title
-                        from keepa_client import product_image_url
-
-                        built = product_image_url(product)
-                        if built:
-                            item.image_url = built
-
-                webhook = self.s.webhooks.get(tier)
-                if not webhook:
-                    continue
                 ok, err = send_alert(
                     webhook,
                     self.s.pings.get(tier, ""),
@@ -184,6 +218,10 @@ class Monitor:
                 else:
                     logger.warning("Failed Amazon-%s for %s: %s", tier, item.asin, err)
 
+            # Brief pause between band calls (token refill / Keepa politeness).
+            if i < len(active_tiers) - 1 and not self._stop:
+                time.sleep(1.5)
+
         self.store.prune_history(45)
         return alerted
 
@@ -201,11 +239,13 @@ class Monitor:
                 self.reload_settings()
                 n = self.run_once()
                 wait = self.s.poll_interval_sec
-                logger.info("Cycle done. %d alert(s). Next scan in %ss (%s min).", n, wait, wait // 60)
+                logger.info(
+                    "Cycle done. %d alert(s). Next scan in %ss (%s min).",
+                    n, wait, wait // 60,
+                )
             except Exception:  # noqa: BLE001
                 logger.exception("Unexpected error in monitor cycle")
                 wait = self.s.poll_interval_sec
-            # Sleep in chunks so stop / interval change can apply sooner
             end = time.time() + wait
             while time.time() < end and not self._stop:
                 time.sleep(min(5.0, end - time.time()))
