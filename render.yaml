@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: amazon-price-error-monitor
+    runtime: python
+    plan: starter
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn web_ui:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    disk:
+      name: apem-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATA_DIR
+        value: /var/data
+      - key: KEEPA_API_KEY
+        sync: false
+      - key: DISCORD_WEBHOOK_60
+        sync: false
+      - key: DISCORD_WEBHOOK_70
+        sync: false
+      - key: DISCORD_WEBHOOK_80
+        sync: false
+      - key: DISCORD_WEBHOOK_90
+        sync: false
+      - key: UI_PASSWORD
+        sync: false
+      - key: POLL_INTERVAL_SEC
+        value: "900"
+      - key: MIN_DISCOUNT
+        value: "60"
+      - key: MIN_ORIGINAL_PRICE
+        value: "8.99"
+      - key: ROUTE_MODE
+        value: highest
+      - key: ENRICH_PRODUCTS
+        value: "false"
+      - key: INCLUDE_GRAPH
+        value: "true"
+      - key: LOG_LEVEL
+        value: INFO

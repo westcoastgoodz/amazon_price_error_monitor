@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+data/*.db
+data/*.sqlite3
+data/ui_settings.json
+venv/
+.venv/
