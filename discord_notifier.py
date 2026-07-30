@@ -6,8 +6,8 @@ import logging
 
 import httpx
 
+from alert_uis import EFC_LOGO_PATH, build_alert_ui
 from config import Settings
-from alert_uis import build_alert_ui
 from models import AlertItem
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,15 @@ def _fetch_graph(url: str) -> bytes | None:
         return None
 
 
+def _logo_bytes() -> bytes | None:
+    try:
+        if EFC_LOGO_PATH.is_file():
+            return EFC_LOGO_PATH.read_bytes()
+    except OSError:
+        return None
+    return None
+
+
 def send_alert(
     webhook_url: str,
     ping: str,
@@ -77,18 +86,31 @@ def send_alert(
                 if graph_bytes:
                     logger.info("Used Keepa API graphimage for %s", item.asin)
 
+    logo = _logo_bytes()
+    # If logo missing, strip attachment:// icon so Discord doesn't 400.
+    if not logo:
+        author = embed.get("author") or {}
+        if str(author.get("icon_url") or "").startswith("attachment://"):
+            author.pop("icon_url", None)
+
     try:
         with httpx.Client(timeout=20.0) as client:
+            files: list[tuple] = []
+            if logo:
+                files.append(("files[0]", ("efc_logo.png", logo, "image/png")))
             if graph_bytes:
                 embed["image"] = {"url": "attachment://graph.png"}
+                idx = len(files)
+                files.append((f"files[{idx}]", ("graph.png", graph_bytes, "image/png")))
+
+            if files:
                 payload = {"content": content, "embeds": [embed]}
                 resp = client.post(
                     webhook_url,
                     data={"payload_json": json.dumps(payload)},
-                    files={"file": ("graph.png", graph_bytes, "image/png")},
+                    files=files,
                 )
             else:
-                # Never leave a hotlinked Keepa URL Discord can't fetch (403 → 400).
                 embed.pop("image", None)
                 payload = {"content": content, "embeds": [embed]}
                 resp = client.post(webhook_url, json=payload)
@@ -98,13 +120,14 @@ def send_alert(
             # Retry once without thumbnail if Discord rejected the embed.
             if resp.status_code == 400 and "thumbnail" in embed:
                 embed.pop("thumbnail", None)
-                if graph_bytes:
-                    embed["image"] = {"url": "attachment://graph.png"}
+                if files:
+                    if graph_bytes:
+                        embed["image"] = {"url": "attachment://graph.png"}
                     payload = {"content": content, "embeds": [embed]}
                     resp = client.post(
                         webhook_url,
                         data={"payload_json": json.dumps(payload)},
-                        files={"file": ("graph.png", graph_bytes, "image/png")},
+                        files=files,
                     )
                 else:
                     embed.pop("image", None)

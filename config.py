@@ -156,6 +156,13 @@ def load_settings() -> Settings:
         70: _get("DISCORD_WEBHOOK_70"),
         80: _get("DISCORD_WEBHOOK_80"),
     }
+    # CHANNEL_ENABLED_50=false → skip that tier even if webhook is set.
+    channel_on = {
+        50: _get_bool("CHANNEL_ENABLED_50", True),
+        60: _get_bool("CHANNEL_ENABLED_60", True),
+        70: _get_bool("CHANNEL_ENABLED_70", True),
+        80: _get_bool("CHANNEL_ENABLED_80", True),
+    }
     pings = {
         50: _get("DISCORD_PING_50"),
         60: _get("DISCORD_PING_60"),
@@ -167,7 +174,7 @@ def load_settings() -> Settings:
         keepa_domain=_get_int("KEEPA_DOMAIN", 1),
         price_type=_get_int("PRICE_TYPE", 0),
         date_range=_get_int("DATE_RANGE", 3),
-        webhooks={k: v for k, v in webhooks.items() if v},
+        webhooks={k: v for k, v in webhooks.items() if v and channel_on.get(k, True)},
         pings={k: v for k, v in pings.items() if v},
         route_mode=_get("ROUTE_MODE", "highest").lower() or "highest",
         poll_interval_sec=_get_int("POLL_INTERVAL_SEC", 1500),

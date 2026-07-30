@@ -29,6 +29,14 @@ services:
         sync: false
       - key: DISCORD_WEBHOOK_80
         sync: false
+      - key: CHANNEL_ENABLED_50
+        value: "true"
+      - key: CHANNEL_ENABLED_60
+        value: "true"
+      - key: CHANNEL_ENABLED_70
+        value: "true"
+      - key: CHANNEL_ENABLED_80
+        value: "true"
       # --- remaining settings (env = source of truth) ---
       - key: KEEPA_DOMAIN
         value: "1"

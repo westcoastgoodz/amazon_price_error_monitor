@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from models import AlertItem
 
@@ -12,9 +13,10 @@ TIER_COLORS = {
     80: 0xE67E22,
 }
 
-_AMAZON_ICON = (
-    "https://upload.wikimedia.org/wikipedia/commons/d/de/Amazon_icon.png"
-)
+# Bundled with webhook as attachment://efc_logo.png (no public CDN needed).
+EFC_LOGO_PATH = Path(__file__).resolve().parent / "static" / "efc_logo.png"
+EFC_LOGO_ATTACHMENT = "attachment://efc_logo.png"
+AUTHOR_NAME = "EFC Price Error Monitor"
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -50,12 +52,14 @@ def build_alert_ui(item: AlertItem, tier: int, style: str | None = None) -> tupl
             "inline": False,
         },
     ]
+    author: dict = {
+        "name": AUTHOR_NAME,
+        "url": "https://www.amazon.com",
+    }
+    if EFC_LOGO_PATH.is_file():
+        author["icon_url"] = EFC_LOGO_ATTACHMENT
     embed = {
-        "author": {
-            "name": "Amazon Price Error Monitor",
-            "icon_url": _AMAZON_ICON,
-            "url": "https://www.amazon.com",
-        },
+        "author": author,
         "title": _truncate(item.title, 240),
         "url": item.amazon_url,
         "color": TIER_COLORS.get(tier, 0x2B2D31),
