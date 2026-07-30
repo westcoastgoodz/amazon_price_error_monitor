@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 from models import AlertItem
 
 TIER_COLORS = {
+    50: 0x9B59B6,
     60: 0x3498DB,
     70: 0x2ECC71,
     80: 0xE67E22,
-    90: 0xE74C3C,
 }
 
 _AMAZON_ICON = (

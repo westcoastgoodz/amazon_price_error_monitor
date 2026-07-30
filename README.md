@@ -1,6 +1,6 @@
 Amazon Price Error Monitor
 
-Keepa to Discord price-error alerts for Amazon-60, Amazon-70, Amazon-80, and Amazon-90 channels.
+Keepa to Discord price-error alerts for Amazon-50, Amazon-60, Amazon-70, and Amazon-80 channels.
 
 
 What you need
@@ -64,8 +64,8 @@ If you already saw "No module named fastapi":
 3. Configure in the UI
 
 1. Paste your Keepa API key, then Save.
-2. Paste the 4 Discord webhooks (Amazon-60 / 70 / 80 / 90), then Save.
-3. Optional: Send test alert (uses Amazon-60 only, no Keepa tokens).
+2. Paste the 4 Discord webhooks (Amazon-50 / 60 / 70 / 80), then Save.
+3. Optional: Send test alert (uses Amazon-50 only, no Keepa tokens).
 4. Adjust scan settings if needed, then Save.
 5. Click Start monitor.
 
@@ -84,10 +84,10 @@ Use a Render Web Service so the monitor keeps running in the cloud.
    - Env DATA_DIR=/var/data
 4. In Render Environment, set at least:
    - KEEPA_API_KEY
+   - DISCORD_WEBHOOK_50
    - DISCORD_WEBHOOK_60
    - DISCORD_WEBHOOK_70
    - DISCORD_WEBHOOK_80
-   - DISCORD_WEBHOOK_90
    - UI_PASSWORD (recommended — locks the public dashboard)
 5. Choose a plan that does not sleep (Starter or higher). Free tier sleeps and stops monitoring.
 6. After deploy, open your Render URL.

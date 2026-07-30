@@ -26,7 +26,7 @@ def validate(s: Settings) -> list[str]:
     if not s.keepa_api_key:
         problems.append("KEEPA_API_KEY is missing (needed to run the monitor).")
     if not s.tiers:
-        problems.append("No Discord webhooks configured (set DISCORD_WEBHOOK_60/70/80/90).")
+        problems.append("No Discord webhooks configured (set DISCORD_WEBHOOK_50/60/70/80).")
     return problems
 
 

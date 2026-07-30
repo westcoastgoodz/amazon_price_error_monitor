@@ -13,6 +13,9 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# Discord channels: Amazon-50 / 60 / 70 / 80 (highest first).
+DISCORD_TIERS = (80, 70, 60, 50)
+
 load_dotenv(BASE_DIR / ".env")
 
 
@@ -89,17 +92,22 @@ AMAZON_SELLER_IDS = {
 class Settings:
     keepa_api_key: str = ""
     keepa_domain: int = 1
-    price_type: int = 1
+    price_type: int = 0
     date_range: int = 3
 
     webhooks: dict[int, str] = field(default_factory=dict)
     pings: dict[int, str] = field(default_factory=dict)
     route_mode: str = "highest"
 
-    poll_interval_sec: int = 300
-    min_discount: int = 60
+    poll_interval_sec: int = 1500  # 25 min — Keepa Pro friendly
+    min_discount: int = 50
     alert_cooldown_hours: int = 24
     reference_mode: str = "keepa_avg"  # keepa_avg | rolling_30d
+
+    max_alerts_per_tier: int = 1
+    enrich_on_alert: bool = True
+    no_repeat_same_day: bool = True
+    allow_cheaper_repeat: bool = True
 
     min_original_price: float = 8.99
     min_review_count: int = 0
@@ -108,10 +116,17 @@ class Settings:
     exclude_categories: list[int] = field(default_factory=list)
     include_brands: list[str] = field(default_factory=list)
     exclude_brands: list[str] = field(default_factory=list)
-    seller_type: str = "any"
+    seller_type: str = "amazon"
     title_keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
     enrich_products: bool = True
+
+    # Real price-error quality (vs raw Keepa deal junk)
+    require_lowest: bool = True
+    min_recent_discount: int = 40
+    reject_promotions: bool = True
+    reject_business: bool = True
+    verify_live_price: bool = True
 
     include_graph: bool = True
     log_level: str = "INFO"
@@ -119,7 +134,7 @@ class Settings:
     @property
     def tiers(self) -> list[int]:
         """Discount tiers that actually have a webhook configured, high -> low."""
-        return sorted((t for t in (90, 80, 70, 60) if self.webhooks.get(t)), reverse=True)
+        return sorted((t for t in DISCORD_TIERS if self.webhooks.get(t)), reverse=True)
 
     @property
     def domain_code(self) -> str:
@@ -136,29 +151,33 @@ class Settings:
 
 def load_settings() -> Settings:
     webhooks = {
+        50: _get("DISCORD_WEBHOOK_50"),
         60: _get("DISCORD_WEBHOOK_60"),
         70: _get("DISCORD_WEBHOOK_70"),
         80: _get("DISCORD_WEBHOOK_80"),
-        90: _get("DISCORD_WEBHOOK_90"),
     }
     pings = {
+        50: _get("DISCORD_PING_50"),
         60: _get("DISCORD_PING_60"),
         70: _get("DISCORD_PING_70"),
         80: _get("DISCORD_PING_80"),
-        90: _get("DISCORD_PING_90"),
     }
     s = Settings(
         keepa_api_key=_get("KEEPA_API_KEY"),
         keepa_domain=_get_int("KEEPA_DOMAIN", 1),
-        price_type=_get_int("PRICE_TYPE", 1),
+        price_type=_get_int("PRICE_TYPE", 0),
         date_range=_get_int("DATE_RANGE", 3),
         webhooks={k: v for k, v in webhooks.items() if v},
         pings={k: v for k, v in pings.items() if v},
         route_mode=_get("ROUTE_MODE", "highest").lower() or "highest",
-        poll_interval_sec=_get_int("POLL_INTERVAL_SEC", 300),
-        min_discount=_get_int("MIN_DISCOUNT", 60),
+        poll_interval_sec=_get_int("POLL_INTERVAL_SEC", 1500),
+        min_discount=_get_int("MIN_DISCOUNT", 50),
         alert_cooldown_hours=_get_int("ALERT_COOLDOWN_HOURS", 24),
         reference_mode=_get("REFERENCE_MODE", "keepa_avg").lower() or "keepa_avg",
+        max_alerts_per_tier=max(1, min(5, _get_int("MAX_ALERTS_PER_TIER", 1))),
+        enrich_on_alert=_get_bool("ENRICH_ON_ALERT", True),
+        no_repeat_same_day=_get_bool("NO_REPEAT_SAME_DAY", True),
+        allow_cheaper_repeat=_get_bool("ALLOW_CHEAPER_REPEAT", True),
         min_original_price=_get_float("MIN_ORIGINAL_PRICE", 8.99),
         min_review_count=_get_int("MIN_REVIEW_COUNT", 0),
         min_rating=_get_float("MIN_RATING", 0.0),
@@ -166,14 +185,19 @@ def load_settings() -> Settings:
         exclude_categories=_get_list_int("EXCLUDE_CATEGORIES"),
         include_brands=_get_list_str("INCLUDE_BRANDS"),
         exclude_brands=_get_list_str("EXCLUDE_BRANDS"),
-        seller_type=_get("SELLER_TYPE", "any").lower() or "any",
+        seller_type=_get("SELLER_TYPE", "amazon").lower() or "amazon",
         title_keywords=_get_list_str("TITLE_KEYWORDS"),
         exclude_keywords=_get_list_str("EXCLUDE_KEYWORDS"),
-        enrich_products=_get_bool("ENRICH_PRODUCTS", True),
+        enrich_products=_get_bool("ENRICH_PRODUCTS", False),
+        require_lowest=_get_bool("REQUIRE_LOWEST", True),
+        min_recent_discount=_get_int("MIN_RECENT_DISCOUNT", 40),
+        reject_promotions=_get_bool("REJECT_PROMOTIONS", True),
+        reject_business=_get_bool("REJECT_BUSINESS", True),
+        verify_live_price=_get_bool("VERIFY_LIVE_PRICE", True),
         include_graph=_get_bool("INCLUDE_GRAPH", True),
         log_level=_get("LOG_LEVEL", "INFO").upper() or "INFO",
     )
-    # UI-saved key/webhooks override .env when present.
+    # Only overlay when UI file exists (env stays source of truth on Render).
     from ui_settings import apply_ui_to_settings
 
     apply_ui_to_settings(s)

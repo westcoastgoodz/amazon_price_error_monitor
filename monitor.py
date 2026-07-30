@@ -6,7 +6,7 @@ import time
 
 from config import DATA_DIR, Settings
 from discord_notifier import send_alert
-from filters import passes_filters, target_tiers
+from filters import passes_filters, passes_price_error_quality, target_tiers
 from keepa_client import KeepaClient, KeepaError
 from models import AlertItem, build_alert
 from storage import Storage
@@ -16,13 +16,14 @@ logger = logging.getLogger(__name__)
 
 INT_MAX = 2147483647
 
-# Keepa page is sorted by high discount — one 60%+ fetch floods with 90%+ and
-# starves Amazon-60/70/80. Fetch each band separately so every channel can alert.
+# Keepa page is sorted by high discount — one wide fetch floods top tiers and
+# starves lower ones. Fetch each band separately so every channel can alert.
+# Bands stop at 89% — no Amazon-90 channel and no 90%+ alerts.
 TIER_BANDS: dict[int, tuple[int, int]] = {
-    90: (90, INT_MAX),
     80: (80, 89),
     70: (70, 79),
     60: (60, 69),
+    50: (50, 59),
 }
 
 
@@ -31,7 +32,10 @@ def build_selection(
     *,
     delta_percent_range: tuple[int, int] | None = None,
 ) -> dict:
-    lo, hi = delta_percent_range or (s.min_discount, INT_MAX)
+    # Hard cap: never request 90%+ deals.
+    lo, hi = delta_percent_range or (s.min_discount, 89)
+    hi = min(int(hi), 89)
+    lo = min(int(lo), hi)
     selection: dict = {
         "domainId": s.keepa_domain,
         "priceTypes": [s.price_type],
@@ -40,7 +44,12 @@ def build_selection(
         "deltaPercentRange": [lo, hi],
         "isFilterEnabled": True,
         "isRangeEnabled": True,
+        "filterErotic": True,
+        "singleVariation": True,
     }
+    # Prefer historical lows — closer to real price errors than random sale %.
+    if bool(getattr(s, "require_lowest", True)):
+        selection["isLowest"] = True
     if s.include_categories:
         selection["includeCategories"] = s.include_categories
     if s.exclude_categories:
@@ -123,14 +132,14 @@ class Monitor:
             out.append(item)
         return out
 
-    def _enrich(self, item: AlertItem) -> None:
+    def _enrich(self, item: AlertItem) -> dict | None:
         try:
             product = self.keepa.get_product(item.asin)
         except KeepaError as exc:
             logger.debug("Enrich failed %s: %s", item.asin, exc)
-            return
+            return None
         if not product:
-            return
+            return None
         from keepa_client import product_image_url
         from models import _extract_stats, _seller_label
 
@@ -147,16 +156,18 @@ class Monitor:
         built = product_image_url(product)
         if built:
             item.image_url = built
+        return product
 
     def run_once(self) -> int:
         self.reload_settings()
         max_per = int(getattr(self.s, "max_alerts_per_tier", 1) or 1)
-        enrich = bool(getattr(self.s, "enrich_on_alert", True))
+        # Quality gates need /product — always enrich before send.
+        enrich = True
         alerted = 0
         sent_asins: set[str] = set()
 
         # High tiers first; each band is its own Keepa /deal call.
-        active_tiers = [t for t in (90, 80, 70, 60) if self.s.webhooks.get(t)]
+        active_tiers = [t for t in (80, 70, 60, 50) if self.s.webhooks.get(t)]
         for i, tier in enumerate(active_tiers):
             if self._stop:
                 break
@@ -174,7 +185,7 @@ class Monitor:
                 "Amazon-%s band %s–%s: %d deals (tokens left: %s)",
                 tier,
                 band[0],
-                "max" if band[1] >= INT_MAX else band[1],
+                "max" if band[1] >= 89 and band[0] >= 80 else band[1],
                 len(deals),
                 self.keepa.tokens_left,
             )
@@ -197,8 +208,23 @@ class Monitor:
                     break
                 if item.asin in sent_asins:
                     continue
-                if enrich:
-                    self._enrich(item)
+
+                # Cheap pre-check (no Keepa tokens): sudden 7d drop, etc.
+                ok_pre, reason_pre = passes_price_error_quality(item, None, self.s)
+                if not ok_pre and "sudden drop" in reason_pre:
+                    logger.info("Skip %s: %s", item.asin, reason_pre)
+                    continue
+
+                product = self._enrich(item) if enrich else None
+                # Re-check seller filters after enrich.
+                ok_basic, reason_basic = passes_filters(item, self.s)
+                if not ok_basic:
+                    logger.info("Skip %s after enrich: %s", item.asin, reason_basic)
+                    continue
+                ok_q, reason_q = passes_price_error_quality(item, product, self.s)
+                if not ok_q:
+                    logger.info("Skip %s (not real price error): %s", item.asin, reason_q)
+                    continue
 
                 ok, err = send_alert(
                     webhook,
@@ -212,8 +238,12 @@ class Monitor:
                     alerted += 1
                     picked += 1
                     logger.info(
-                        "Alerted %s (%s%%) -> Amazon-%s | seller=%s",
-                        item.asin, item.discount, tier, item.seller,
+                        "Alerted %s (%s%%, 7d=%s%%) -> Amazon-%s | seller=%s",
+                        item.asin,
+                        item.discount,
+                        item.recent_discount,
+                        tier,
+                        item.seller,
                     )
                 else:
                     logger.warning("Failed Amazon-%s for %s: %s", tier, item.asin, err)
@@ -234,21 +264,35 @@ class Monitor:
             self.s.min_discount,
             getattr(self.s, "no_repeat_same_day", True),
         )
+        first = True
         while not self._stop:
             try:
                 self.reload_settings()
                 n = self.run_once()
                 wait = self.s.poll_interval_sec
-                logger.info(
-                    "Cycle done. %d alert(s). Next scan in %ss (%s min).",
-                    n, wait, wait // 60,
-                )
+                if first:
+                    logger.info(
+                        "First scan done (%d alert(s)). Next in %ss (%s min).",
+                        n, wait, wait // 60,
+                    )
+                    first = False
+                else:
+                    logger.info(
+                        "Cycle done. %d alert(s). Next scan in %ss (%s min).",
+                        n, wait, wait // 60,
+                    )
             except Exception:  # noqa: BLE001
                 logger.exception("Unexpected error in monitor cycle")
                 wait = self.s.poll_interval_sec
-            end = time.time() + wait
+            cycle_start = time.time()
+            wait = self.s.poll_interval_sec
+            end = cycle_start + wait
             while time.time() < end and not self._stop:
                 time.sleep(min(5.0, end - time.time()))
+                self.reload_settings()
+                if self.s.poll_interval_sec != wait:
+                    wait = self.s.poll_interval_sec
+                    end = cycle_start + wait
 
     def close(self) -> None:
         self.keepa.close()

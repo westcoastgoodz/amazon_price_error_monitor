@@ -12,11 +12,16 @@ services:
       mountPath: /var/data
       sizeGB: 1
     envVars:
+      # --- already set by you (secrets) ---
       - key: PYTHON_VERSION
         value: "3.12.8"
       - key: DATA_DIR
         value: /var/data
       - key: KEEPA_API_KEY
+        sync: false
+      - key: UI_PASSWORD
+        sync: false
+      - key: DISCORD_WEBHOOK_50
         sync: false
       - key: DISCORD_WEBHOOK_60
         sync: false
@@ -24,20 +29,51 @@ services:
         sync: false
       - key: DISCORD_WEBHOOK_80
         sync: false
-      - key: DISCORD_WEBHOOK_90
-        sync: false
-      - key: UI_PASSWORD
-        sync: false
-      - key: POLL_INTERVAL_SEC
-        value: "900"
-      - key: MIN_DISCOUNT
-        value: "60"
-      - key: MIN_ORIGINAL_PRICE
-        value: "8.99"
+      # --- remaining settings (env = source of truth) ---
+      - key: KEEPA_DOMAIN
+        value: "1"
+      - key: PRICE_TYPE
+        value: "0"
+      - key: DATE_RANGE
+        value: "3"
       - key: ROUTE_MODE
         value: highest
+      - key: POLL_INTERVAL_SEC
+        value: "1500"
+      - key: MIN_DISCOUNT
+        value: "50"
+      - key: ALERT_COOLDOWN_HOURS
+        value: "24"
+      - key: REFERENCE_MODE
+        value: keepa_avg
+      - key: MAX_ALERTS_PER_TIER
+        value: "1"
+      - key: ENRICH_ON_ALERT
+        value: "true"
+      - key: NO_REPEAT_SAME_DAY
+        value: "true"
+      - key: ALLOW_CHEAPER_REPEAT
+        value: "true"
+      - key: MIN_ORIGINAL_PRICE
+        value: "8.99"
+      - key: MIN_REVIEW_COUNT
+        value: "0"
+      - key: MIN_RATING
+        value: "0"
+      - key: SELLER_TYPE
+        value: amazon
       - key: ENRICH_PRODUCTS
         value: "false"
+      - key: REQUIRE_LOWEST
+        value: "true"
+      - key: MIN_RECENT_DISCOUNT
+        value: "40"
+      - key: REJECT_PROMOTIONS
+        value: "true"
+      - key: REJECT_BUSINESS
+        value: "true"
+      - key: VERIFY_LIVE_PRICE
+        value: "true"
       - key: INCLUDE_GRAPH
         value: "true"
       - key: LOG_LEVEL

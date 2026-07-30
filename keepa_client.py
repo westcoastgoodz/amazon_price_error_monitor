@@ -235,8 +235,14 @@ class KeepaClient:
                 raise KeepaError(f"HTTP error calling {path}: {exc}") from exc
 
             if resp.status_code == 429:
-                # Out of tokens - back off using refill hint if present.
-                wait = 20 * (attempt + 1)
+                # Prefer Keepa's refill hint; cap wait so scans don't hang minutes.
+                try:
+                    hint = resp.json()
+                    refill_ms = int(hint.get("refillIn") or 0)
+                    self.tokens_left = hint.get("tokensLeft", self.tokens_left)
+                except Exception:
+                    refill_ms = 0
+                wait = max(5, min(45, (refill_ms // 1000) + 2)) if refill_ms else 15 * (attempt + 1)
                 logger.warning("Keepa 429 (rate/tokens). Waiting %ss", wait)
                 time.sleep(wait)
                 continue

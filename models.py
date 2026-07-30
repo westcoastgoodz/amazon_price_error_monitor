@@ -38,6 +38,8 @@ class AlertItem:
     ebay_url: str
     atc_url: str
     graph_url: str
+    # Drop vs 7-day average (sudden drop signal for real price errors).
+    recent_discount: int | None = None
 
 
 def _extract_stats(product: dict | None) -> dict:
@@ -105,6 +107,12 @@ def build_alert(
     if discount <= 0:
         return None
 
+    # 7-day average drop — filters "always cheap vs old 90d MSRP" Keepa noise.
+    recent_discount: int | None = None
+    week_avg = deal.avg_price(1, pt)
+    if week_avg is not None and week_avg > 0:
+        recent_discount = int(round((week_avg - new_price) / week_avg * 100))
+
     stats = _extract_stats(product)
 
     image_url = product_image_url(product) or deal.image_url
@@ -141,4 +149,5 @@ def build_alert(
         ebay_url="https://www.ebay.com/sch/i.html?_nkw=" + quote_plus(q),
         atc_url=f"https://{host}/gp/aws/cart/add.html?ASIN.1={deal.asin}&Quantity.1=1",
         graph_url=graph_image_url(deal.asin, settings.domain_code) if settings.include_graph else "",
+        recent_discount=recent_discount,
     )

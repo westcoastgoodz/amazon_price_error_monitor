@@ -39,7 +39,15 @@ def _is_cloud() -> bool:
 
 
 def _ui_password() -> str:
-    return (os.getenv("UI_PASSWORD") or "").strip()
+    """Read UI_PASSWORD from env. Strip spaces and accidental wrapping quotes."""
+    raw = os.getenv("UI_PASSWORD")
+    if raw is None:
+        return ""
+    pw = str(raw).strip()
+    # Render / copy-paste often stores "secret" or 'secret' with quotes included.
+    if len(pw) >= 2 and pw[0] == pw[-1] and pw[0] in ("'", '"'):
+        pw = pw[1:-1].strip()
+    return pw
 
 
 def _auth_token(password: str) -> str:
@@ -47,8 +55,10 @@ def _auth_token(password: str) -> str:
 
 
 def _password_ok(given: str, expected: str) -> bool:
-    a = (given or "").encode("utf-8")
-    b = (expected or "").encode("utf-8")
+    a = (given or "").strip().encode("utf-8")
+    b = (expected or "").strip().encode("utf-8")
+    if not a or not b:
+        return False
     if len(a) != len(b):
         return False
     return hmac.compare_digest(a, b)
@@ -472,6 +482,16 @@ PAGE = """<!DOCTYPE html>
           </div>
           <p class="lead">Paste each channel webhook. Uncheck a channel to pause alerts for that group (webhook stays saved).</p>
           <div class="webhook-list">
+            <div class="webhook-item __DIS50__">
+              <div class="wh-top">
+                <label class="ch-enable">
+                  <input type="checkbox" name="channel_enabled_50" value="1" __EN50__/>
+                  <span><strong>Amazon-50</strong> <small>50–59% off</small></span>
+                </label>
+                __W50__
+              </div>
+              <input class="mono" type="url" name="discord_webhook_50" value="__WH50__" placeholder="https://discord.com/api/webhooks/..."/>
+            </div>
             <div class="webhook-item __DIS60__">
               <div class="wh-top">
                 <label class="ch-enable">
@@ -502,22 +522,12 @@ PAGE = """<!DOCTYPE html>
               </div>
               <input class="mono" type="url" name="discord_webhook_80" value="__WH80__" placeholder="https://discord.com/api/webhooks/..."/>
             </div>
-            <div class="webhook-item __DIS90__">
-              <div class="wh-top">
-                <label class="ch-enable">
-                  <input type="checkbox" name="channel_enabled_90" value="1" __EN90__/>
-                  <span><strong>Amazon-90</strong> <small>90%+ off</small></span>
-                </label>
-                __W90__
-              </div>
-              <input class="mono" type="url" name="discord_webhook_90" value="__WH90__" placeholder="https://discord.com/api/webhooks/..."/>
-            </div>
           </div>
           <div class="actions">
             <button class="primary" type="submit">Save webhooks</button>
             <button class="ghost" type="submit" formaction="/test-alert">Send test alert</button>
           </div>
-          <p class="hint">Test alert goes to Amazon-60 only (sample embed, no Keepa tokens).</p>
+          <p class="hint">Test alert goes to Amazon-50 only (sample embed, no Keepa tokens).</p>
         </form>
       </div>
 
@@ -542,11 +552,11 @@ PAGE = """<!DOCTYPE html>
             <label class="field">
               <span>Max alerts per channel / scan</span>
               <input type="number" name="max_alerts_per_tier" min="1" max="5" value="__MAX_ALERTS__"/>
-              <p class="hint">1 = best deal only for each Amazon-60 / 70 / 80 / 90.</p>
+              <p class="hint">1 = best deal only for each Amazon-50 / 60 / 70 / 80.</p>
             </label>
             <label class="field">
               <span>Min discount %</span>
-              <input type="number" name="min_discount" min="50" max="95" value="__MIN_DISCOUNT__"/>
+              <input type="number" name="min_discount" min="40" max="95" value="__MIN_DISCOUNT__"/>
             </label>
             <label class="field">
               <span>Min original price ($)</span>
@@ -630,7 +640,7 @@ def home(_: Request) -> str:
     def en(tier: int) -> bool:
         return bool(ui.get(f"channel_enabled_{tier}", True))
 
-    wh = {t: _display_webhook(ui, t) for t in (60, 70, 80, 90)}
+    wh = {t: _display_webhook(ui, t) for t in (50, 60, 70, 80)}
     return _render_page(
         STATUS_CLASS="on" if running else "off",
         STATUS_LABEL="RUNNING" if running else "STOPPED",
@@ -644,22 +654,22 @@ def home(_: Request) -> str:
         ENRICH="checked" if ui["enrich_on_alert"] else "",
         KEEPA_KEY=html.escape(key),
         KEY_STATUS="saved" if key else "not set",
+        WH50=html.escape(wh[50]),
         WH60=html.escape(wh[60]),
         WH70=html.escape(wh[70]),
         WH80=html.escape(wh[80]),
-        WH90=html.escape(wh[90]),
+        EN50="checked" if en(50) else "",
         EN60="checked" if en(60) else "",
         EN70="checked" if en(70) else "",
         EN80="checked" if en(80) else "",
-        EN90="checked" if en(90) else "",
+        DIS50="" if en(50) else "disabled-ch",
         DIS60="" if en(60) else "disabled-ch",
         DIS70="" if en(70) else "disabled-ch",
         DIS80="" if en(80) else "disabled-ch",
-        DIS90="" if en(90) else "disabled-ch",
+        W50=_webhook_badge(bool(wh[50]), en(50)),
         W60=_webhook_badge(bool(wh[60]), en(60)),
         W70=_webhook_badge(bool(wh[70]), en(70)),
         W80=_webhook_badge(bool(wh[80]), en(80)),
-        W90=_webhook_badge(bool(wh[90]), en(90)),
         START_BTN='<button class="primary" type="submit">Start monitor</button>'
         if not running
         else '<button class="ghost" type="button" disabled>Start monitor</button>',
@@ -679,25 +689,25 @@ def save_key(keepa_api_key: str = Form("")):
 
 @app.post("/save-webhooks")
 def save_webhooks(
+    discord_webhook_50: str = Form(""),
     discord_webhook_60: str = Form(""),
     discord_webhook_70: str = Form(""),
     discord_webhook_80: str = Form(""),
-    discord_webhook_90: str = Form(""),
+    channel_enabled_50: str | None = Form(None),
     channel_enabled_60: str | None = Form(None),
     channel_enabled_70: str | None = Form(None),
     channel_enabled_80: str | None = Form(None),
-    channel_enabled_90: str | None = Form(None),
 ):
     save_ui_settings(
         {
+            "discord_webhook_50": (discord_webhook_50 or "").strip(),
             "discord_webhook_60": (discord_webhook_60 or "").strip(),
             "discord_webhook_70": (discord_webhook_70 or "").strip(),
             "discord_webhook_80": (discord_webhook_80 or "").strip(),
-            "discord_webhook_90": (discord_webhook_90 or "").strip(),
+            "channel_enabled_50": channel_enabled_50 == "1",
             "channel_enabled_60": channel_enabled_60 == "1",
             "channel_enabled_70": channel_enabled_70 == "1",
             "channel_enabled_80": channel_enabled_80 == "1",
-            "channel_enabled_90": channel_enabled_90 == "1",
         }
     )
     _status["last_message"] = "Discord webhooks & channel toggles saved."
@@ -706,16 +716,16 @@ def save_webhooks(
 
 @app.post("/test-alert")
 def test_alert(
+    discord_webhook_50: str = Form(""),
     discord_webhook_60: str = Form(""),
     discord_webhook_70: str = Form(""),
     discord_webhook_80: str = Form(""),
-    discord_webhook_90: str = Form(""),
+    channel_enabled_50: str | None = Form(None),
     channel_enabled_60: str | None = Form(None),
     channel_enabled_70: str | None = Form(None),
     channel_enabled_80: str | None = Form(None),
-    channel_enabled_90: str | None = Form(None),
 ):
-    """Sample Discord alert via Amazon-60 webhook — no Keepa tokens."""
+    """Sample Discord alert via Amazon-50 webhook — no Keepa tokens."""
     from discord_notifier import send_alert
     from keepa_client import amazon_image_url
     from models import AlertItem
@@ -723,21 +733,21 @@ def test_alert(
     # Persist current form values so a fresh paste works without a separate Save.
     save_ui_settings(
         {
+            "discord_webhook_50": (discord_webhook_50 or "").strip(),
             "discord_webhook_60": (discord_webhook_60 or "").strip(),
             "discord_webhook_70": (discord_webhook_70 or "").strip(),
             "discord_webhook_80": (discord_webhook_80 or "").strip(),
-            "discord_webhook_90": (discord_webhook_90 or "").strip(),
+            "channel_enabled_50": channel_enabled_50 == "1",
             "channel_enabled_60": channel_enabled_60 == "1",
             "channel_enabled_70": channel_enabled_70 == "1",
             "channel_enabled_80": channel_enabled_80 == "1",
-            "channel_enabled_90": channel_enabled_90 == "1",
         }
     )
 
     ui = load_ui_settings()
-    webhook = _display_webhook(ui, 60)
+    webhook = _display_webhook(ui, 50)
     if not webhook:
-        _status["last_message"] = "Test alert failed — paste an Amazon-60 webhook first."
+        _status["last_message"] = "Test alert failed — paste an Amazon-50 webhook first."
         return RedirectResponse("/", status_code=303)
 
     asin = "B00005QJ1S"
@@ -748,8 +758,8 @@ def test_alert(
         image_url=amazon_image_url("31RmBhqOkZL.jpg", size=120),
         new_price=3.66,
         old_price=13.61,
-        discount=73,
-        seller="FBA",
+        discount=55,
+        seller="Amazon",
         promotion=False,
         business_required=False,
         brand="Anker",
@@ -764,10 +774,11 @@ def test_alert(
         ebay_url="https://www.ebay.com/sch/i.html?_nkw=Anker+735+Charger",
         atc_url=f"https://{host}/gp/aws/cart/add.html?ASIN.1={asin}&Quantity.1=1",
         graph_url="",
+        recent_discount=55,
     )
-    ok, err = send_alert(webhook, "", item, 60)
+    ok, err = send_alert(webhook, "", item, 50)
     if ok:
-        _status["last_message"] = "Test alert sent to Amazon-60 Discord webhook."
+        _status["last_message"] = "Test alert sent to Amazon-50 Discord webhook."
     else:
         _status["last_message"] = f"Test alert failed: {err}"
     return RedirectResponse("/", status_code=303)
@@ -835,9 +846,9 @@ def login_post(password: str = Form("")):
 
 @app.post("/save")
 def save(
-    scan_interval_min: int = Form(15),
+    scan_interval_min: int = Form(25),
     max_alerts_per_tier: int = Form(1),
-    min_discount: int = Form(60),
+    min_discount: int = Form(50),
     min_original_price: float = Form(8.99),
     no_repeat_same_day: str = Form("true"),
     enrich_on_alert: str | None = Form(None),

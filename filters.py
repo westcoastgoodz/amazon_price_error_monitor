@@ -2,6 +2,9 @@
 
 The most important rule (client): drop anything whose ORIGINAL (old) price is
 below MIN_ORIGINAL_PRICE (default $8.99), regardless of sale price.
+
+Extra "real price error" gates reject common Keepa deal-feed junk:
+marketplace ghosts, coupons, B2B-only, and slow 90-day MSRP drops.
 """
 from __future__ import annotations
 
@@ -17,6 +20,10 @@ def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
     # Minimum discount (lowest tier gate).
     if item.discount < s.min_discount:
         return False, f"discount {item.discount}% < {s.min_discount}%"
+
+    # No 90%+ alerts (Amazon-90 removed; hard reject).
+    if item.discount >= 90:
+        return False, f"discount {item.discount}% >= 90 (disabled)"
 
     title_l = (item.title or "").lower()
     if s.title_keywords and not any(k in title_l for k in s.title_keywords):
@@ -54,6 +61,54 @@ def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
                 return False, f"seller {item.seller} != FBM"
             if s.seller_type == "amazon" and seller_l != "amazon":
                 return False, f"seller {item.seller} != Amazon"
+
+    return True, "ok"
+
+
+def passes_price_error_quality(
+    item: AlertItem,
+    product: dict | None,
+    s: Settings,
+) -> tuple[bool, str]:
+    """Stricter gates so we post real Amazon price errors, not Keepa deal junk."""
+
+    # Sudden drop vs last 7 days — skips "always discounted vs old 90d average".
+    min_recent = int(getattr(s, "min_recent_discount", 0) or 0)
+    if min_recent > 0:
+        recent = item.recent_discount
+        if recent is None or recent < min_recent:
+            return False, (
+                f"not a sudden drop (7d disc {recent}% < {min_recent}%)"
+            )
+
+    if bool(getattr(s, "reject_business", True)) and item.business_required:
+        return False, "business-only product"
+
+    if bool(getattr(s, "reject_promotions", True)) and item.promotion:
+        return False, "promotion/coupon"
+
+    seller_mode = (getattr(s, "seller_type", "any") or "any").lower()
+    seller_l = (item.seller or "").lower()
+    if seller_mode == "amazon" and seller_l != "amazon":
+        return False, f"seller {item.seller} != Amazon"
+    if seller_mode == "fba" and seller_l not in ("fba", "amazon"):
+        return False, f"seller {item.seller} != FBA/Amazon"
+
+    # Live Keepa /product must still show a similar buyable price (stale deal skip).
+    if bool(getattr(s, "verify_live_price", True)) and product:
+        stats = product.get("stats") or {}
+        current = stats.get("current") or []
+        pt = int(getattr(s, "price_type", 0) or 0)
+        try:
+            live_cents = current[pt]
+        except (IndexError, TypeError):
+            live_cents = None
+        if live_cents is None or live_cents < 0:
+            return False, "live price missing / OOS"
+        live = live_cents / 100.0
+        # If live recovered a lot above the deal price, not a buyable error anymore.
+        if live > item.new_price * 1.20 and (live - item.new_price) > 1.0:
+            return False, f"live ${live:.2f} >> deal ${item.new_price:.2f}"
 
     return True, "ok"
 
