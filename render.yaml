@@ -63,13 +63,13 @@ services:
       - key: ALLOW_CHEAPER_REPEAT
         value: "true"
       - key: MIN_ORIGINAL_PRICE
-        value: "8.99"
+        value: "4"
       - key: MIN_REVIEW_COUNT
         value: "0"
       - key: MIN_RATING
         value: "0"
       - key: SELLER_TYPE
-        value: amazon
+        value: fba
       - key: ENRICH_PRODUCTS
         value: "false"
       - key: REQUIRE_LOWEST

@@ -14,7 +14,7 @@ DEFAULTS: dict[str, Any] = {
     "no_repeat_same_day": True,
     "allow_cheaper_repeat": True,
     "min_discount": 50,
-    "min_original_price": 8.99,
+    "min_original_price": 4.0,
     # Credentials (UI overrides .env when non-empty)
     "keepa_api_key": "",
     "discord_webhook_50": "",

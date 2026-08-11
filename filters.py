@@ -1,7 +1,7 @@
 """Configurable filtering to cut noise, per the client's requirements.
 
 The most important rule (client): drop anything whose ORIGINAL (old) price is
-below MIN_ORIGINAL_PRICE (default $8.99), regardless of sale price.
+below MIN_ORIGINAL_PRICE (default $4), regardless of sale price.
 
 Extra "real price error" gates reject common Keepa deal-feed junk:
 marketplace ghosts, coupons, B2B-only, and slow 90-day MSRP drops.

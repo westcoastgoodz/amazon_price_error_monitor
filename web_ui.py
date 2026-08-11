@@ -849,7 +849,7 @@ def save(
     scan_interval_min: int = Form(25),
     max_alerts_per_tier: int = Form(1),
     min_discount: int = Form(50),
-    min_original_price: float = Form(8.99),
+    min_original_price: float = Form(4.0),
     no_repeat_same_day: str = Form("true"),
     enrich_on_alert: str | None = Form(None),
 ):

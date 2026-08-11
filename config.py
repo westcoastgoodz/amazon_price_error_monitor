@@ -109,14 +109,14 @@ class Settings:
     no_repeat_same_day: bool = True
     allow_cheaper_repeat: bool = True
 
-    min_original_price: float = 8.99
+    min_original_price: float = 4.0
     min_review_count: int = 0
     min_rating: float = 0.0
     include_categories: list[int] = field(default_factory=list)
     exclude_categories: list[int] = field(default_factory=list)
     include_brands: list[str] = field(default_factory=list)
     exclude_brands: list[str] = field(default_factory=list)
-    seller_type: str = "amazon"
+    seller_type: str = "fba"
     title_keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
     enrich_products: bool = True
@@ -185,14 +185,14 @@ def load_settings() -> Settings:
         enrich_on_alert=_get_bool("ENRICH_ON_ALERT", True),
         no_repeat_same_day=_get_bool("NO_REPEAT_SAME_DAY", True),
         allow_cheaper_repeat=_get_bool("ALLOW_CHEAPER_REPEAT", True),
-        min_original_price=_get_float("MIN_ORIGINAL_PRICE", 8.99),
+        min_original_price=_get_float("MIN_ORIGINAL_PRICE", 4.0),
         min_review_count=_get_int("MIN_REVIEW_COUNT", 0),
         min_rating=_get_float("MIN_RATING", 0.0),
         include_categories=_get_list_int("INCLUDE_CATEGORIES"),
         exclude_categories=_get_list_int("EXCLUDE_CATEGORIES"),
         include_brands=_get_list_str("INCLUDE_BRANDS"),
         exclude_brands=_get_list_str("EXCLUDE_BRANDS"),
-        seller_type=_get("SELLER_TYPE", "amazon").lower() or "amazon",
+        seller_type=_get("SELLER_TYPE", "fba").lower() or "fba",
         title_keywords=_get_list_str("TITLE_KEYWORDS"),
         exclude_keywords=_get_list_str("EXCLUDE_KEYWORDS"),
         enrich_products=_get_bool("ENRICH_PRODUCTS", False),
