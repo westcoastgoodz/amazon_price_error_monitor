@@ -75,7 +75,7 @@ services:
       - key: REQUIRE_LOWEST
         value: "false"
       - key: MIN_RECENT_DISCOUNT
-        value: "0"
+        value: "20"
       - key: REJECT_PROMOTIONS
         value: "false"
       - key: REJECT_BUSINESS

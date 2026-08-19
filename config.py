@@ -123,7 +123,7 @@ class Settings:
 
     # Real price-error quality (vs raw Keepa deal junk)
     require_lowest: bool = False
-    min_recent_discount: int = 0
+    min_recent_discount: int = 20
     reject_promotions: bool = False
     reject_business: bool = False
     verify_live_price: bool = True
@@ -197,7 +197,7 @@ def load_settings() -> Settings:
         exclude_keywords=_get_list_str("EXCLUDE_KEYWORDS"),
         enrich_products=_get_bool("ENRICH_PRODUCTS", False),
         require_lowest=_get_bool("REQUIRE_LOWEST", False),
-        min_recent_discount=_get_int("MIN_RECENT_DISCOUNT", 0),
+        min_recent_discount=_get_int("MIN_RECENT_DISCOUNT", 20),
         reject_promotions=_get_bool("REJECT_PROMOTIONS", False),
         reject_business=_get_bool("REJECT_BUSINESS", False),
         verify_live_price=_get_bool("VERIFY_LIVE_PRICE", True),
