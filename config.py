@@ -92,7 +92,7 @@ AMAZON_SELLER_IDS = {
 class Settings:
     keepa_api_key: str = ""
     keepa_domain: int = 1
-    price_type: int = 0
+    price_type: int = 1
     date_range: int = 3
 
     webhooks: dict[int, str] = field(default_factory=dict)
@@ -104,7 +104,7 @@ class Settings:
     alert_cooldown_hours: int = 24
     reference_mode: str = "keepa_avg"  # keepa_avg | rolling_30d
 
-    max_alerts_per_tier: int = 1
+    max_alerts_per_tier: int = 2
     enrich_on_alert: bool = True
     no_repeat_same_day: bool = True
     allow_cheaper_repeat: bool = True
@@ -116,16 +116,16 @@ class Settings:
     exclude_categories: list[int] = field(default_factory=list)
     include_brands: list[str] = field(default_factory=list)
     exclude_brands: list[str] = field(default_factory=list)
-    seller_type: str = "fba"
+    seller_type: str = "any"
     title_keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
     enrich_products: bool = True
 
     # Real price-error quality (vs raw Keepa deal junk)
-    require_lowest: bool = True
-    min_recent_discount: int = 40
-    reject_promotions: bool = True
-    reject_business: bool = True
+    require_lowest: bool = False
+    min_recent_discount: int = 0
+    reject_promotions: bool = False
+    reject_business: bool = False
     verify_live_price: bool = True
 
     include_graph: bool = True
@@ -172,7 +172,7 @@ def load_settings() -> Settings:
     s = Settings(
         keepa_api_key=_get("KEEPA_API_KEY"),
         keepa_domain=_get_int("KEEPA_DOMAIN", 1),
-        price_type=_get_int("PRICE_TYPE", 0),
+        price_type=_get_int("PRICE_TYPE", 1),
         date_range=_get_int("DATE_RANGE", 3),
         webhooks={k: v for k, v in webhooks.items() if v and channel_on.get(k, True)},
         pings={k: v for k, v in pings.items() if v},
@@ -181,7 +181,7 @@ def load_settings() -> Settings:
         min_discount=_get_int("MIN_DISCOUNT", 50),
         alert_cooldown_hours=_get_int("ALERT_COOLDOWN_HOURS", 24),
         reference_mode=_get("REFERENCE_MODE", "keepa_avg").lower() or "keepa_avg",
-        max_alerts_per_tier=max(1, min(5, _get_int("MAX_ALERTS_PER_TIER", 1))),
+        max_alerts_per_tier=max(1, min(5, _get_int("MAX_ALERTS_PER_TIER", 2))),
         enrich_on_alert=_get_bool("ENRICH_ON_ALERT", True),
         no_repeat_same_day=_get_bool("NO_REPEAT_SAME_DAY", True),
         allow_cheaper_repeat=_get_bool("ALLOW_CHEAPER_REPEAT", True),
@@ -192,14 +192,14 @@ def load_settings() -> Settings:
         exclude_categories=_get_list_int("EXCLUDE_CATEGORIES"),
         include_brands=_get_list_str("INCLUDE_BRANDS"),
         exclude_brands=_get_list_str("EXCLUDE_BRANDS"),
-        seller_type=_get("SELLER_TYPE", "fba").lower() or "fba",
+        seller_type=_get("SELLER_TYPE", "any").lower() or "any",
         title_keywords=_get_list_str("TITLE_KEYWORDS"),
         exclude_keywords=_get_list_str("EXCLUDE_KEYWORDS"),
         enrich_products=_get_bool("ENRICH_PRODUCTS", False),
-        require_lowest=_get_bool("REQUIRE_LOWEST", True),
-        min_recent_discount=_get_int("MIN_RECENT_DISCOUNT", 40),
-        reject_promotions=_get_bool("REJECT_PROMOTIONS", True),
-        reject_business=_get_bool("REJECT_BUSINESS", True),
+        require_lowest=_get_bool("REQUIRE_LOWEST", False),
+        min_recent_discount=_get_int("MIN_RECENT_DISCOUNT", 0),
+        reject_promotions=_get_bool("REJECT_PROMOTIONS", False),
+        reject_business=_get_bool("REJECT_BUSINESS", False),
         verify_live_price=_get_bool("VERIFY_LIVE_PRICE", True),
         include_graph=_get_bool("INCLUDE_GRAPH", True),
         log_level=_get("LOG_LEVEL", "INFO").upper() or "INFO",

@@ -9,12 +9,13 @@ from config import DATA_DIR, DISCORD_TIERS
 
 DEFAULTS: dict[str, Any] = {
     "scan_interval_min": 25,
-    "max_alerts_per_tier": 1,
+    "max_alerts_per_tier": 2,
     "enrich_on_alert": True,
     "no_repeat_same_day": True,
     "allow_cheaper_repeat": True,
     "min_discount": 50,
     "min_original_price": 4.0,
+    "_rev": 2,
     # Credentials (UI overrides .env when non-empty)
     "keepa_api_key": "",
     "discord_webhook_50": "",
@@ -57,6 +58,12 @@ def load_ui_settings() -> dict[str, Any]:
     data["max_alerts_per_tier"] = max(1, min(5, int(data["max_alerts_per_tier"])))
     data["min_discount"] = max(40, min(95, int(data["min_discount"])))
     data["min_original_price"] = max(0.0, float(data["min_original_price"]))
+    # Old dashboard defaults would override the new env (8.99 / 1 alert).
+    if abs(float(data["min_original_price"]) - 8.99) < 0.001:
+        data["min_original_price"] = 4.0
+    if int(data.get("_rev") or 0) < 2 and int(data["max_alerts_per_tier"]) == 1:
+        data["max_alerts_per_tier"] = 2
+    data["_rev"] = 2
     for k in _SECRET_KEYS:
         data[k] = str(data.get(k) or "").strip()
     for tier in DISCORD_TIERS:

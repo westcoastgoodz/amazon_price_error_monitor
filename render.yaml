@@ -41,7 +41,7 @@ services:
       - key: KEEPA_DOMAIN
         value: "1"
       - key: PRICE_TYPE
-        value: "0"
+        value: "1"
       - key: DATE_RANGE
         value: "3"
       - key: ROUTE_MODE
@@ -55,7 +55,7 @@ services:
       - key: REFERENCE_MODE
         value: keepa_avg
       - key: MAX_ALERTS_PER_TIER
-        value: "1"
+        value: "2"
       - key: ENRICH_ON_ALERT
         value: "true"
       - key: NO_REPEAT_SAME_DAY
@@ -69,17 +69,17 @@ services:
       - key: MIN_RATING
         value: "0"
       - key: SELLER_TYPE
-        value: fba
+        value: any
       - key: ENRICH_PRODUCTS
         value: "false"
       - key: REQUIRE_LOWEST
-        value: "true"
+        value: "false"
       - key: MIN_RECENT_DISCOUNT
-        value: "40"
+        value: "0"
       - key: REJECT_PROMOTIONS
-        value: "true"
+        value: "false"
       - key: REJECT_BUSINESS
-        value: "true"
+        value: "false"
       - key: VERIFY_LIVE_PRICE
         value: "true"
       - key: INCLUDE_GRAPH

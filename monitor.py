@@ -38,6 +38,7 @@ def build_selection(
     lo = min(int(lo), hi)
     selection: dict = {
         "domainId": s.keepa_domain,
+        # 0=Amazon-sold only, 1=Marketplace New (FBA/FBM/Amazon) — matches Keepa Deals "New".
         "priceTypes": [s.price_type],
         "dateRange": s.date_range,
         "sortType": 4,
@@ -47,8 +48,8 @@ def build_selection(
         "filterErotic": True,
         "singleVariation": True,
     }
-    # Prefer historical lows — closer to real price errors than random sale %.
-    if bool(getattr(s, "require_lowest", True)):
+    # Optional all-time-low lock. Off by default — Keepa Deals / Black Box do not require it.
+    if bool(getattr(s, "require_lowest", False)):
         selection["isLowest"] = True
     if s.include_categories:
         selection["includeCategories"] = s.include_categories
@@ -258,10 +259,12 @@ class Monitor:
     def run_forever(self) -> None:
         self.reload_settings()
         logger.info(
-            "Monitor started. tiers=%s interval=%ss min_discount=%s%% no_repeat_day=%s",
+            "Monitor started. tiers=%s interval=%ss min_discount=%s%% price_type=%s seller=%s no_repeat_day=%s",
             self.s.tiers,
             self.s.poll_interval_sec,
             self.s.min_discount,
+            self.s.price_type,
+            self.s.seller_type,
             getattr(self.s, "no_repeat_same_day", True),
         )
         first = True

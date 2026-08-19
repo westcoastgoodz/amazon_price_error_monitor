@@ -3,8 +3,8 @@
 The most important rule (client): drop anything whose ORIGINAL (old) price is
 below MIN_ORIGINAL_PRICE (default $4), regardless of sale price.
 
-Extra "real price error" gates reject common Keepa deal-feed junk:
-marketplace ghosts, coupons, B2B-only, and slow 90-day MSRP drops.
+Live-price verify still skips OOS / already-recovered deals. Promo, B2B,
+and 7-day-drop gates are off by default so Keepa Deals items can post.
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
         if s.exclude_brands and brand_l in s.exclude_brands:
             return False, "brand in exclude list"
 
-        if s.seller_type != "any":
+        if s.seller_type not in ("any", "all", ""):
             seller_l = item.seller.lower()
             if s.seller_type == "fba" and seller_l not in ("fba", "amazon"):
                 return False, f"seller {item.seller} != FBA"
@@ -72,45 +72,58 @@ def passes_price_error_quality(
 ) -> tuple[bool, str]:
     """Stricter gates so we post real Amazon price errors, not Keepa deal junk."""
 
-    # Sudden drop vs last 7 days — skips "always discounted vs old 90d average".
+    # Sudden drop vs last 7 days. Missing 7d data must not kill a Keepa deal.
     min_recent = int(getattr(s, "min_recent_discount", 0) or 0)
     if min_recent > 0:
         recent = item.recent_discount
-        if recent is None or recent < min_recent:
+        if recent is not None and recent < min_recent:
             return False, (
                 f"not a sudden drop (7d disc {recent}% < {min_recent}%)"
             )
 
-    if bool(getattr(s, "reject_business", True)) and item.business_required:
+    if bool(getattr(s, "reject_business", False)) and item.business_required:
         return False, "business-only product"
 
-    if bool(getattr(s, "reject_promotions", True)) and item.promotion:
+    if bool(getattr(s, "reject_promotions", False)) and item.promotion:
         return False, "promotion/coupon"
 
     seller_mode = (getattr(s, "seller_type", "any") or "any").lower()
     seller_l = (item.seller or "").lower()
-    if seller_mode == "amazon" and seller_l != "amazon":
-        return False, f"seller {item.seller} != Amazon"
-    if seller_mode == "fba" and seller_l not in ("fba", "amazon"):
-        return False, f"seller {item.seller} != FBA/Amazon"
+    if seller_mode not in ("", "any", "all"):
+        if seller_mode == "amazon" and seller_l != "amazon":
+            return False, f"seller {item.seller} != Amazon"
+        if seller_mode == "fba" and seller_l not in ("fba", "amazon"):
+            return False, f"seller {item.seller} != FBA/Amazon"
+        if seller_mode == "fbm" and seller_l != "fbm":
+            return False, f"seller {item.seller} != FBM"
 
     # Live Keepa /product must still show a similar buyable price (stale deal skip).
     if bool(getattr(s, "verify_live_price", True)) and product:
-        stats = product.get("stats") or {}
-        current = stats.get("current") or []
-        pt = int(getattr(s, "price_type", 0) or 0)
-        try:
-            live_cents = current[pt]
-        except (IndexError, TypeError):
-            live_cents = None
-        if live_cents is None or live_cents < 0:
+        live = _best_live_price(product, int(getattr(s, "price_type", 1) or 1))
+        if live is None:
             return False, "live price missing / OOS"
-        live = live_cents / 100.0
-        # If live recovered a lot above the deal price, not a buyable error anymore.
         if live > item.new_price * 1.20 and (live - item.new_price) > 1.0:
             return False, f"live ${live:.2f} >> deal ${item.new_price:.2f}"
 
     return True, "ok"
+
+
+def _best_live_price(product: dict, price_type: int) -> float | None:
+    """Prefer the configured price type; fall back to New / Buy Box / Amazon / FBA."""
+    stats = product.get("stats") or {}
+    current = stats.get("current") or []
+    seen: set[int] = set()
+    for idx in (price_type, 1, 18, 0, 10):
+        if idx in seen:
+            continue
+        seen.add(idx)
+        try:
+            cents = current[idx]
+        except (IndexError, TypeError):
+            continue
+        if cents is not None and cents >= 0:
+            return cents / 100.0
+    return None
 
 
 def target_tiers(discount: int, s: Settings) -> list[int]:
