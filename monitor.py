@@ -145,7 +145,9 @@ class Monitor:
         from models import _extract_stats, _seller_label
 
         stats = _extract_stats(product)
-        item.seller = _seller_label(stats, self.s.amazon_seller_id)
+        item.seller = _seller_label(
+            stats, self.s.amazon_seller_id, deal_price=item.new_price
+        )
         item.promotion = bool(stats.get("promotion"))
         item.business_required = bool(stats.get("business_required"))
         item.brand = stats.get("brand")
