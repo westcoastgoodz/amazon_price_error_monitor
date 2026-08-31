@@ -55,7 +55,9 @@ services:
       - key: REFERENCE_MODE
         value: keepa_avg
       - key: MAX_ALERTS_PER_TIER
-        value: "4"
+        value: "8"
+      - key: DEAL_PAGES
+        value: "2"
       - key: ENRICH_ON_ALERT
         value: "true"
       - key: NO_REPEAT_SAME_DAY
@@ -75,7 +77,7 @@ services:
       - key: REQUIRE_LOWEST
         value: "false"
       - key: MIN_RECENT_DISCOUNT
-        value: "10"
+        value: "0"
       - key: REJECT_PROMOTIONS
         value: "false"
       - key: REJECT_BUSINESS

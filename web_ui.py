@@ -551,7 +551,7 @@ PAGE = """<!DOCTYPE html>
             </label>
             <label class="field">
               <span>Max alerts per channel / scan</span>
-              <input type="number" name="max_alerts_per_tier" min="1" max="5" value="__MAX_ALERTS__"/>
+              <input type="number" name="max_alerts_per_tier" min="1" max="15" value="__MAX_ALERTS__"/>
               <p class="hint">1 = best deal only for each Amazon-50 / 60 / 70 / 80.</p>
             </label>
             <label class="field">

@@ -179,18 +179,31 @@ class Monitor:
             if band is None:
                 continue
             selection = build_selection(self.s, delta_percent_range=band)
+            pages = max(1, min(5, int(getattr(self.s, "deal_pages", 1) or 1)))
+            deals = []
+            seen_page_asins: set[str] = set()
             try:
-                deals = self.keepa.get_deals(selection)
+                for page in range(pages):
+                    batch = self.keepa.get_deals(selection, page=page)
+                    if not batch:
+                        break
+                    for d in batch:
+                        if d.asin and d.asin not in seen_page_asins:
+                            seen_page_asins.add(d.asin)
+                            deals.append(d)
+                    if page < pages - 1:
+                        time.sleep(0.4)
             except KeepaError as exc:
                 logger.error("Keepa deal fetch failed for Amazon-%s: %s", tier, exc)
                 continue
 
             logger.info(
-                "Amazon-%s band %s–%s: %d deals (tokens left: %s)",
+                "Amazon-%s band %s–%s: %d deals (%d page(s), tokens left: %s)",
                 tier,
                 band[0],
                 "max" if band[1] >= 89 and band[0] >= 80 else band[1],
                 len(deals),
+                pages,
                 self.keepa.tokens_left,
             )
 
