@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ DEFAULTS: dict[str, Any] = {
     "allow_cheaper_repeat": True,
     "min_discount": 50,
     "min_original_price": 4.0,
-    "_rev": 5,
+    "_rev": 6,
     # Credentials (UI overrides .env when non-empty)
     "keepa_api_key": "",
     "discord_webhook_50": "",
@@ -42,6 +43,22 @@ def _settings_path() -> Path:
     return DATA_DIR / "ui_settings.json"
 
 
+def _env_int(name: str) -> int | None:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _persist(data: dict[str, Any]) -> None:
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def load_ui_settings() -> dict[str, Any]:
     data = dict(DEFAULTS)
     path = _settings_path()
@@ -54,24 +71,37 @@ def load_ui_settings() -> dict[str, Any]:
                         data[k] = raw[k]
         except (OSError, json.JSONDecodeError):
             pass
+
     data["scan_interval_min"] = max(5, min(120, int(data["scan_interval_min"])))
     data["max_alerts_per_tier"] = max(1, min(15, int(data["max_alerts_per_tier"])))
     data["min_discount"] = max(40, min(95, int(data["min_discount"])))
     data["min_original_price"] = max(0.0, float(data["min_original_price"]))
-    # Old dashboard defaults would override the new env (8.99 / 1–2 alerts).
+
+    changed = False
+    # Old dashboard defaults
     if abs(float(data["min_original_price"]) - 8.99) < 0.001:
         data["min_original_price"] = 4.0
-    rev = int(data.get("_rev") or 0)
-    if rev < 4 and int(data["max_alerts_per_tier"]) < 8:
+        changed = True
+    if int(data["max_alerts_per_tier"]) < 8:
         data["max_alerts_per_tier"] = 8
-    if rev < 5 and int(data["scan_interval_min"]) > 10:
+        changed = True
+    # Old 25-min default → 10 min (Starter API)
+    if int(data["scan_interval_min"]) >= 20:
         data["scan_interval_min"] = 10
-    data["_rev"] = 5
+        changed = True
+
+    data["_rev"] = 6
     for k in _SECRET_KEYS:
         data[k] = str(data.get(k) or "").strip()
     for tier in DISCORD_TIERS:
         ck = f"channel_enabled_{tier}"
         data[ck] = bool(data.get(ck, True))
+
+    if path.is_file() and changed:
+        try:
+            _persist(data)
+        except OSError:
+            pass
     return data
 
 
@@ -80,27 +110,43 @@ def save_ui_settings(updates: dict[str, Any]) -> dict[str, Any]:
     for k, v in updates.items():
         if k in DEFAULTS:
             data[k] = v
-    path = _settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    # Never re-save the old 25-min trap from a stale form default.
+    if int(data.get("scan_interval_min") or 10) >= 20:
+        data["scan_interval_min"] = 10
+    if int(data.get("max_alerts_per_tier") or 8) < 8:
+        data["max_alerts_per_tier"] = 8
+    data["_rev"] = 6
+    _persist(data)
     return load_ui_settings()
 
 
 def apply_ui_to_settings(settings) -> None:
     """Mutate Settings with UI overlay when ui_settings.json exists.
 
-    If the file is missing, env/.env stays the source of truth (Render deploy).
+    Render env wins for scan speed / alert volume when set:
+    POLL_INTERVAL_SEC, MAX_ALERTS_PER_TIER.
     """
     path = _settings_path()
     if not path.is_file():
         return
 
     ui = load_ui_settings()
-    settings.poll_interval_sec = int(ui["scan_interval_min"]) * 60
+
+    env_poll = _env_int("POLL_INTERVAL_SEC")
+    if env_poll is not None and env_poll >= 60:
+        settings.poll_interval_sec = env_poll
+    else:
+        settings.poll_interval_sec = int(ui["scan_interval_min"]) * 60
+
+    env_max = _env_int("MAX_ALERTS_PER_TIER")
+    if env_max is not None:
+        settings.max_alerts_per_tier = max(1, min(15, env_max))
+    else:
+        settings.max_alerts_per_tier = int(ui["max_alerts_per_tier"])
+
     settings.min_discount = int(ui["min_discount"])
     settings.min_original_price = float(ui["min_original_price"])
     settings.enrich_products = False
-    settings.max_alerts_per_tier = int(ui["max_alerts_per_tier"])
     settings.enrich_on_alert = bool(ui["enrich_on_alert"])
     settings.no_repeat_same_day = bool(ui["no_repeat_same_day"])
     settings.allow_cheaper_repeat = bool(ui["allow_cheaper_repeat"])
@@ -114,7 +160,6 @@ def apply_ui_to_settings(settings) -> None:
         wh = str(ui.get(f"discord_webhook_{tier}") or "").strip()
         if wh:
             webhooks[tier] = wh
-    # Drop disabled channels so monitor won't alert / won't count them as active tiers
     settings.webhooks = {
         k: v
         for k, v in webhooks.items()

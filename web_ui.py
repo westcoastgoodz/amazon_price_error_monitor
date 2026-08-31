@@ -846,8 +846,8 @@ def login_post(password: str = Form("")):
 
 @app.post("/save")
 def save(
-    scan_interval_min: int = Form(25),
-    max_alerts_per_tier: int = Form(1),
+    scan_interval_min: int = Form(10),
+    max_alerts_per_tier: int = Form(8),
     min_discount: int = Form(50),
     min_original_price: float = Form(4.0),
     no_repeat_same_day: str = Form("true"),
