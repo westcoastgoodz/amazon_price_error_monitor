@@ -11,6 +11,18 @@ from __future__ import annotations
 from config import Settings
 from models import AlertItem
 
+# Obvious junk Keepa often lists — never alert these.
+_SPAM_TITLE_BITS = (
+    "for parts",
+    "not working",
+    "does not work",
+    "doesn't work",
+    "wholesale lot",
+    "no returns",
+    "parts only",
+    "as is",
+)
+
 
 def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
     # Original (not sale) price floor.
@@ -26,6 +38,8 @@ def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
         return False, f"discount {item.discount}% >= 90 (disabled)"
 
     title_l = (item.title or "").lower()
+    if any(bit in title_l for bit in _SPAM_TITLE_BITS):
+        return False, "spam / parts-only title"
     if s.title_keywords and not any(k in title_l for k in s.title_keywords):
         return False, "title missing required keyword"
     if s.exclude_keywords and any(k in title_l for k in s.exclude_keywords):

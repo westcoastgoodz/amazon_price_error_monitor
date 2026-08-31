@@ -99,12 +99,12 @@ class Settings:
     pings: dict[int, str] = field(default_factory=dict)
     route_mode: str = "highest"
 
-    poll_interval_sec: int = 1500  # 25 min — Keepa Pro friendly
+    poll_interval_sec: int = 1500  # 25 min — Keepa Pro / low-token friendly
     min_discount: int = 50
     alert_cooldown_hours: int = 24
     reference_mode: str = "keepa_avg"  # keepa_avg | rolling_30d
 
-    max_alerts_per_tier: int = 2
+    max_alerts_per_tier: int = 4
     enrich_on_alert: bool = True
     no_repeat_same_day: bool = True
     allow_cheaper_repeat: bool = True
@@ -123,7 +123,8 @@ class Settings:
 
     # Real price-error quality (vs raw Keepa deal junk)
     require_lowest: bool = False
-    min_recent_discount: int = 20
+    # 10% vs 7d avg — closer to Keepa Deals; 0 = off; 20 was too strict
+    min_recent_discount: int = 10
     reject_promotions: bool = False
     reject_business: bool = False
     verify_live_price: bool = True
@@ -173,7 +174,7 @@ def load_settings() -> Settings:
         keepa_api_key=_get("KEEPA_API_KEY"),
         keepa_domain=_get_int("KEEPA_DOMAIN", 1),
         price_type=_get_int("PRICE_TYPE", 1),
-        date_range=_get_int("DATE_RANGE", 3),
+        date_range=_get_int("DATE_RANGE", 2),
         webhooks={k: v for k, v in webhooks.items() if v and channel_on.get(k, True)},
         pings={k: v for k, v in pings.items() if v},
         route_mode=_get("ROUTE_MODE", "highest").lower() or "highest",
@@ -181,7 +182,7 @@ def load_settings() -> Settings:
         min_discount=_get_int("MIN_DISCOUNT", 50),
         alert_cooldown_hours=_get_int("ALERT_COOLDOWN_HOURS", 24),
         reference_mode=_get("REFERENCE_MODE", "keepa_avg").lower() or "keepa_avg",
-        max_alerts_per_tier=max(1, min(5, _get_int("MAX_ALERTS_PER_TIER", 2))),
+        max_alerts_per_tier=max(1, min(5, _get_int("MAX_ALERTS_PER_TIER", 4))),
         enrich_on_alert=_get_bool("ENRICH_ON_ALERT", True),
         no_repeat_same_day=_get_bool("NO_REPEAT_SAME_DAY", True),
         allow_cheaper_repeat=_get_bool("ALLOW_CHEAPER_REPEAT", True),
@@ -197,7 +198,7 @@ def load_settings() -> Settings:
         exclude_keywords=_get_list_str("EXCLUDE_KEYWORDS"),
         enrich_products=_get_bool("ENRICH_PRODUCTS", False),
         require_lowest=_get_bool("REQUIRE_LOWEST", False),
-        min_recent_discount=_get_int("MIN_RECENT_DISCOUNT", 20),
+        min_recent_discount=_get_int("MIN_RECENT_DISCOUNT", 10),
         reject_promotions=_get_bool("REJECT_PROMOTIONS", False),
         reject_business=_get_bool("REJECT_BUSINESS", False),
         verify_live_price=_get_bool("VERIFY_LIVE_PRICE", True),

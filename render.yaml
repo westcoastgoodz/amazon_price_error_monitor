@@ -43,7 +43,7 @@ services:
       - key: PRICE_TYPE
         value: "1"
       - key: DATE_RANGE
-        value: "3"
+        value: "2"
       - key: ROUTE_MODE
         value: highest
       - key: POLL_INTERVAL_SEC
@@ -55,7 +55,7 @@ services:
       - key: REFERENCE_MODE
         value: keepa_avg
       - key: MAX_ALERTS_PER_TIER
-        value: "2"
+        value: "4"
       - key: ENRICH_ON_ALERT
         value: "true"
       - key: NO_REPEAT_SAME_DAY
@@ -75,7 +75,7 @@ services:
       - key: REQUIRE_LOWEST
         value: "false"
       - key: MIN_RECENT_DISCOUNT
-        value: "20"
+        value: "10"
       - key: REJECT_PROMOTIONS
         value: "false"
       - key: REJECT_BUSINESS

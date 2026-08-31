@@ -63,9 +63,10 @@ def build_selection(
 
 
 def _deal_score(item: AlertItem) -> tuple:
-    """Higher is better: discount %, then dollars saved, then lower new price."""
+    """Higher is better: Keepa-Deals style — % off, recent drop, $ saved, lower price."""
     saved = max(0.0, item.old_price - item.new_price)
-    return (item.discount, saved, -item.new_price)
+    recent = int(item.recent_discount) if item.recent_discount is not None else -1
+    return (item.discount, recent, saved, -item.new_price)
 
 
 def _tier_band(tier: int, min_discount: int) -> tuple[int, int] | None:
