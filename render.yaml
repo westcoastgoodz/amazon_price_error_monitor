@@ -47,7 +47,7 @@ services:
       - key: ROUTE_MODE
         value: highest
       - key: POLL_INTERVAL_SEC
-        value: "1500"
+        value: "600"
       - key: MIN_DISCOUNT
         value: "50"
       - key: ALERT_COOLDOWN_HOURS

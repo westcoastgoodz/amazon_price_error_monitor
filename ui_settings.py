@@ -8,14 +8,14 @@ from typing import Any
 from config import DATA_DIR, DISCORD_TIERS
 
 DEFAULTS: dict[str, Any] = {
-    "scan_interval_min": 25,
+    "scan_interval_min": 10,
     "max_alerts_per_tier": 8,
     "enrich_on_alert": True,
     "no_repeat_same_day": True,
     "allow_cheaper_repeat": True,
     "min_discount": 50,
     "min_original_price": 4.0,
-    "_rev": 4,
+    "_rev": 5,
     # Credentials (UI overrides .env when non-empty)
     "keepa_api_key": "",
     "discord_webhook_50": "",
@@ -64,7 +64,9 @@ def load_ui_settings() -> dict[str, Any]:
     rev = int(data.get("_rev") or 0)
     if rev < 4 and int(data["max_alerts_per_tier"]) < 8:
         data["max_alerts_per_tier"] = 8
-    data["_rev"] = 4
+    if rev < 5 and int(data["scan_interval_min"]) > 10:
+        data["scan_interval_min"] = 10
+    data["_rev"] = 5
     for k in _SECRET_KEYS:
         data[k] = str(data.get(k) or "").strip()
     for tier in DISCORD_TIERS:

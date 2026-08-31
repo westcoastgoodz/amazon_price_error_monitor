@@ -99,7 +99,7 @@ class Settings:
     pings: dict[int, str] = field(default_factory=dict)
     route_mode: str = "highest"
 
-    poll_interval_sec: int = 1500  # 25 min — Keepa Pro / low-token friendly
+    poll_interval_sec: int = 600  # 10 min — Starter API (20 tok/min) friendly
     min_discount: int = 50
     alert_cooldown_hours: int = 24
     reference_mode: str = "keepa_avg"  # keepa_avg | rolling_30d
@@ -179,7 +179,7 @@ def load_settings() -> Settings:
         webhooks={k: v for k, v in webhooks.items() if v and channel_on.get(k, True)},
         pings={k: v for k, v in pings.items() if v},
         route_mode=_get("ROUTE_MODE", "highest").lower() or "highest",
-        poll_interval_sec=_get_int("POLL_INTERVAL_SEC", 1500),
+        poll_interval_sec=_get_int("POLL_INTERVAL_SEC", 600),
         min_discount=_get_int("MIN_DISCOUNT", 50),
         alert_cooldown_hours=_get_int("ALERT_COOLDOWN_HOURS", 24),
         reference_mode=_get("REFERENCE_MODE", "keepa_avg").lower() or "keepa_avg",
