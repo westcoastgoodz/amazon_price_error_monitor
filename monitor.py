@@ -98,6 +98,16 @@ class Monitor:
     def request_stop(self) -> None:
         self._stop = True
 
+    @property
+    def stopping(self) -> bool:
+        return bool(self._stop)
+
+    def _sleep(self, seconds: float) -> None:
+        """Interruptible sleep so Stop works within ~0.5s."""
+        end = time.time() + max(0.0, seconds)
+        while time.time() < end and not self._stop:
+            time.sleep(min(0.5, end - time.time()))
+
     def _apply_rolling_reference(self, item: AlertItem) -> None:
         self.store.add_price(item.asin, item.new_price)
         if self.s.reference_mode != "rolling_30d":
@@ -192,10 +202,16 @@ class Monitor:
                             seen_page_asins.add(d.asin)
                             deals.append(d)
                     if page < pages - 1:
-                        time.sleep(0.4)
+                        self._sleep(0.4)
+                    if self._stop:
+                        break
             except KeepaError as exc:
                 logger.error("Keepa deal fetch failed for Amazon-%s: %s", tier, exc)
                 continue
+
+            if self._stop:
+                logger.info("Stop requested — aborting scan after Amazon-%s fetch", tier)
+                break
 
             logger.info(
                 "Amazon-%s band %s–%s: %d deals (%d page(s), tokens left: %s)",
@@ -221,6 +237,8 @@ class Monitor:
                 continue
 
             for item in ranked:
+                if self._stop:
+                    break
                 if picked >= max_per:
                     break
                 if item.asin in sent_asins:
@@ -232,6 +250,8 @@ class Monitor:
                     logger.info("Skip %s: %s", item.asin, reason_pre)
                     continue
 
+                if self._stop:
+                    break
                 product = self._enrich(item) if enrich else None
                 # Re-check seller filters after enrich.
                 ok_basic, reason_basic = passes_filters(item, self.s)
@@ -267,7 +287,7 @@ class Monitor:
 
             # Brief pause between band calls (token refill / Keepa politeness).
             if i < len(active_tiers) - 1 and not self._stop:
-                time.sleep(1.5)
+                self._sleep(1.5)
 
         self.store.prune_history(45)
         return alerted
@@ -287,7 +307,11 @@ class Monitor:
         while not self._stop:
             try:
                 self.reload_settings()
+                if self._stop:
+                    break
                 n = self.run_once()
+                if self._stop:
+                    break
                 wait = self.s.poll_interval_sec
                 if first:
                     logger.info(
@@ -303,16 +327,26 @@ class Monitor:
             except Exception:  # noqa: BLE001
                 logger.exception("Unexpected error in monitor cycle")
                 wait = self.s.poll_interval_sec
+            if self._stop:
+                break
             cycle_start = time.time()
             wait = self.s.poll_interval_sec
             end = cycle_start + wait
             while time.time() < end and not self._stop:
-                time.sleep(min(5.0, end - time.time()))
+                self._sleep(min(0.5, end - time.time()))
                 self.reload_settings()
                 if self.s.poll_interval_sec != wait:
                     wait = self.s.poll_interval_sec
                     end = cycle_start + wait
+        logger.info("Monitor stopped.")
 
     def close(self) -> None:
-        self.keepa.close()
-        self.store.close()
+        self._stop = True
+        try:
+            self.keepa.close()
+        except Exception:
+            pass
+        try:
+            self.store.close()
+        except Exception:
+            pass

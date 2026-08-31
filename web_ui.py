@@ -21,13 +21,17 @@ from ui_settings import load_ui_settings, save_ui_settings
 
 _monitor = None
 _thread: threading.Thread | None = None
-_status = {"running": False, "last_message": "Idle"}
+_status = {"running": False, "stopping": False, "last_message": "Idle"}
 
 AUTH_COOKIE = "apem_session"
 
 
 def _is_running() -> bool:
     return bool(_thread and _thread.is_alive())
+
+
+def _is_stopping() -> bool:
+    return bool(_status.get("stopping")) and _is_running()
 
 
 def _is_cloud() -> bool:
@@ -87,11 +91,13 @@ def _try_start_monitor(*, message: str = "Started.") -> str:
 
     def _run() -> None:
         _status["running"] = True
+        _status["stopping"] = False
         _status["last_message"] = "Monitor running…"
         try:
             _monitor.run_forever()
         finally:
             _status["running"] = False
+            _status["stopping"] = False
             _status["last_message"] = "Stopped."
             try:
                 _monitor.close()
@@ -100,6 +106,7 @@ def _try_start_monitor(*, message: str = "Started.") -> str:
 
     _thread = threading.Thread(target=_run, name="apem-monitor", daemon=True)
     _thread.start()
+    _status["stopping"] = False
     _status["last_message"] = message
     return "ok"
 
@@ -408,13 +415,6 @@ PAGE = """<!DOCTYPE html>
       var btn = document.getElementById("themeBtn");
       if (btn) btn.textContent = next === "dark" ? "Light mode" : "Dark mode";
     }
-    function toggleKeyVis() {
-      var inp = document.getElementById("keepaKey");
-      var btn = document.getElementById("keyVisBtn");
-      if (!inp || !btn) return;
-      if (inp.type === "password") { inp.type = "text"; btn.textContent = "Hide"; }
-      else { inp.type = "password"; btn.textContent = "Show"; }
-    }
     document.addEventListener("DOMContentLoaded", function () {
       var btn = document.getElementById("themeBtn");
       if (!btn) return;
@@ -460,10 +460,9 @@ PAGE = """<!DOCTYPE html>
               <label class="field">
                 <span>Keepa API key</span>
                 <div class="key-row">
-                  <input class="mono" id="keepaKey" type="password" name="keepa_api_key" value="__KEEPA_KEY__" placeholder="Paste Keepa API key" autocomplete="off"/>
-                  <button type="button" class="ghost" id="keyVisBtn" onclick="toggleKeyVis()">Show</button>
+                  <input class="mono" id="keepaKey" type="text" name="keepa_api_key" value="" placeholder="__KEEPA_PLACEHOLDER__" autocomplete="off" spellcheck="false"/>
                 </div>
-                <p class="hint">Click Show to reveal. Save to update anytime.</p>
+                <p class="hint">__KEEPA_HINT__ Paste a new key only when changing it (blank Save clears UI override).</p>
               </label>
               <div class="actions">
                 <button class="primary" type="submit">Save API key</button>
@@ -635,15 +634,30 @@ def home(_: Request) -> str:
     ui = load_ui_settings()
     s = load_settings()
     running = _is_running()
+    stopping = _is_stopping()
     key = s.keepa_api_key or ""
+    if stopping:
+        status_class, status_label = "off", "STOPPING…"
+    elif running:
+        status_class, status_label = "on", "RUNNING"
+    else:
+        status_class, status_label = "off", "STOPPED"
 
     def en(tier: int) -> bool:
         return bool(ui.get(f"channel_enabled_{tier}", True))
 
     wh = {t: _display_webhook(ui, t) for t in (50, 60, 70, 80)}
+    if key:
+        masked = (key[:4] + "…" + key[-4:]) if len(key) > 12 else "••••••••"
+        keepa_placeholder = f"Saved ({masked}) — paste new key to replace"
+        keepa_hint = "Key is already saved (env/UI). Field stays empty so browser autofill cannot overwrite it."
+    else:
+        keepa_placeholder = "Paste Keepa API key"
+        keepa_hint = "No key saved yet."
+
     return _render_page(
-        STATUS_CLASS="on" if running else "off",
-        STATUS_LABEL="RUNNING" if running else "STOPPED",
+        STATUS_CLASS=status_class,
+        STATUS_LABEL=status_label,
         LAST_MESSAGE=html.escape(_status.get("last_message", "") or "Idle"),
         SCAN_INTERVAL=str(ui["scan_interval_min"]),
         MAX_ALERTS=str(ui["max_alerts_per_tier"]),
@@ -652,7 +666,8 @@ def home(_: Request) -> str:
         NR_ON="selected" if ui["no_repeat_same_day"] else "",
         NR_OFF="selected" if not ui["no_repeat_same_day"] else "",
         ENRICH="checked" if ui["enrich_on_alert"] else "",
-        KEEPA_KEY=html.escape(key),
+        KEEPA_PLACEHOLDER=html.escape(keepa_placeholder),
+        KEEPA_HINT=html.escape(keepa_hint),
         KEY_STATUS="saved" if key else "not set",
         WH50=html.escape(wh[50]),
         WH60=html.escape(wh[60]),
@@ -674,16 +689,24 @@ def home(_: Request) -> str:
         if not running
         else '<button class="ghost" type="button" disabled>Start monitor</button>',
         STOP_BTN='<button class="danger" type="submit">Stop</button>'
-        if running
-        else '<button class="ghost" type="button" disabled>Stop</button>',
+        if running and not stopping
+        else (
+            '<button class="ghost" type="button" disabled>Stopping…</button>'
+            if stopping
+            else '<button class="ghost" type="button" disabled>Stop</button>'
+        ),
     )
 
 
 @app.post("/save-key")
 def save_key(keepa_api_key: str = Form("")):
     key = (keepa_api_key or "").strip()
+    # Empty submit = clear UI override only (env key still works).
     save_ui_settings({"keepa_api_key": key})
-    _status["last_message"] = "Keepa API key saved." if key else "Keepa API key cleared."
+    if key:
+        _status["last_message"] = "Keepa API key saved."
+    else:
+        _status["last_message"] = "UI API key cleared (Render/.env key still used if set)."
     return RedirectResponse("/", status_code=303)
 
 
@@ -883,8 +906,17 @@ def start():
 def stop():
     global _monitor
     if _monitor and _is_running():
+        _status["stopping"] = True
+        _status["last_message"] = "Stopping… finishing current Keepa call, then idle."
         _monitor.request_stop()
-        _status["last_message"] = "Stop requested…"
+        try:
+            # Unblock an in-flight HTTP wait if possible.
+            _monitor.keepa.close()
+        except Exception:
+            pass
+    elif not _is_running():
+        _status["stopping"] = False
+        _status["last_message"] = "Already stopped."
     return RedirectResponse("/", status_code=303)
 
 
