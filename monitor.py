@@ -53,8 +53,15 @@ def build_selection(
         selection["isLowest"] = True
     if s.include_categories:
         selection["includeCategories"] = s.include_categories
-    if s.exclude_categories:
-        selection["excludeCategories"] = s.exclude_categories
+    exclude_cats = list(s.exclude_categories)
+    if bool(getattr(s, "exclude_books", True)):
+        from filters import BOOK_CATEGORY_IDS
+
+        for cid in BOOK_CATEGORY_IDS:
+            if cid not in exclude_cats:
+                exclude_cats.append(cid)
+    if exclude_cats:
+        selection["excludeCategories"] = exclude_cats
     if s.min_rating > 0:
         selection["minRating"] = int(round(s.min_rating * 10))
     if s.title_keywords:

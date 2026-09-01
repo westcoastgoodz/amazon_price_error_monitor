@@ -23,6 +23,34 @@ _SPAM_TITLE_BITS = (
     "as is",
 )
 
+# US Amazon / Keepa root browse nodes for books & ebooks.
+BOOK_CATEGORY_IDS = (
+    283155,       # Books
+    133140011,    # Kindle Store / eBooks
+    11260432011,  # Audible Audiobooks (common node)
+)
+
+# Title clues when Keepa category path is incomplete.
+_BOOK_TITLE_BITS = (
+    "paperback",
+    "hardcover",
+    "mass market paperback",
+    "kindle edition",
+    "kindle store",
+    "audiobook",
+    "audio cd",
+    "large print",
+    "board book",
+)
+
+
+def _is_book_item(item: AlertItem) -> bool:
+    cats = set(item.categories) | ({item.root_cat} if item.root_cat else set())
+    if cats & set(BOOK_CATEGORY_IDS):
+        return True
+    title_l = (item.title or "").lower()
+    return any(bit in title_l for bit in _BOOK_TITLE_BITS)
+
 
 def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
     # Original (not sale) price floor.
@@ -40,6 +68,8 @@ def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
     title_l = (item.title or "").lower()
     if any(bit in title_l for bit in _SPAM_TITLE_BITS):
         return False, "spam / parts-only title"
+    if bool(getattr(s, "exclude_books", True)) and _is_book_item(item):
+        return False, "books / kindle / audiobook excluded"
     if s.title_keywords and not any(k in title_l for k in s.title_keywords):
         return False, "title missing required keyword"
     if s.exclude_keywords and any(k in title_l for k in s.exclude_keywords):
@@ -47,9 +77,12 @@ def passes_filters(item: AlertItem, s: Settings) -> tuple[bool, str]:
 
     # Category include / exclude (root + full path).
     cats = set(item.categories) | ({item.root_cat} if item.root_cat else set())
+    exclude_cats = set(s.exclude_categories)
+    if bool(getattr(s, "exclude_books", True)):
+        exclude_cats |= set(BOOK_CATEGORY_IDS)
     if s.include_categories and not (cats & set(s.include_categories)):
         return False, "category not in include list"
-    if s.exclude_categories and (cats & set(s.exclude_categories)):
+    if exclude_cats and (cats & exclude_cats):
         return False, "category in exclude list"
 
     # The remaining filters need enriched product data to be meaningful.

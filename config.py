@@ -129,6 +129,8 @@ class Settings:
     reject_promotions: bool = False
     reject_business: bool = False
     verify_live_price: bool = True
+    # Client: books are low-quality leads — exclude by default
+    exclude_books: bool = True
 
     include_graph: bool = True
     log_level: str = "INFO"
@@ -204,6 +206,7 @@ def load_settings() -> Settings:
         reject_promotions=_get_bool("REJECT_PROMOTIONS", False),
         reject_business=_get_bool("REJECT_BUSINESS", False),
         verify_live_price=_get_bool("VERIFY_LIVE_PRICE", True),
+        exclude_books=_get_bool("EXCLUDE_BOOKS", True),
         include_graph=_get_bool("INCLUDE_GRAPH", True),
         log_level=_get("LOG_LEVEL", "INFO").upper() or "INFO",
     )

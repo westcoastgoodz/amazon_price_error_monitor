@@ -84,6 +84,8 @@ services:
         value: "false"
       - key: VERIFY_LIVE_PRICE
         value: "true"
+      - key: EXCLUDE_BOOKS
+        value: "true"
       - key: INCLUDE_GRAPH
         value: "true"
       - key: LOG_LEVEL
